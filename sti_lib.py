@@ -13,22 +13,53 @@ class STI_Core:
 
     def p10_a_limpieza(self, text):
         """Protocolo 10.A: Filtro de ruido y normalización."""
-        clean_text = re.sub(r'\d+', '', text)
+        if not text:
+            return ""
+        # Eliminar números entre corchetes tipo [1] o [Page 2]
+        clean_text = re.sub(r'\[.*?\]', '', text)
+        # Eliminar puntuación latina básica para tokenización limpia
+        clean_text = re.sub(r'[;,\.]', '', clean_text)
+        # Normalizar espacios
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()
         self.source_text = clean_text
         return clean_text
 
-        # ... (código anterior) ...
+    def p8_a_analisis_lexico(self):
+        """Protocolo 8.A: Tokenización y Registro Inicial."""
+        if not self.source_text:
+            return "No hay texto fuente cargado."
+        
+        tokens = self.source_text.split(' ')
+        nuevos = 0
+        for i, token in enumerate(tokens):
+            if not token: continue # Saltar vacíos
+            
+            if token not in self.glossary:
+                # Protocolo 1.A.4: Clasificación inicial básica
+                # Si tiene más de 3 letras asumimos NUCLEO por defecto, si no PARTICULA
+                categoria = "PARTICULA" if len(token) < 4 else "NUCLEO"
+                self.glossary[token] = {
+                    "token_src": token,
+                    "token_tgt": "", 
+                    "categoria": categoria,
+                    "status": "PENDIENTE",
+                    "ocurrencias": [i]
+                }
+                nuevos += 1
+            else:
+                self.glossary[token]["ocurrencias"].append(i)
+                
+        self.status = "P8_A_COMPLETO"
+        return f"Análisis P8.A completado. {nuevos} términos nuevos registrados."
 
     def p8_ia_autocompletar(self, api_key):
         """
         Usa IA para sugerir traducciones a los núcleos vacíos (PENDIENTE).
-        Respeta Protocolo 4: Jerarquía Etimológica.
         """
         try:
             import google.generativeai as genai
         except ImportError:
-            return "Error: Librería google-generativeai no instalada."
+            return "Error: Librería google-generativeai no instalada en requirements.txt"
 
         # Filtrar solo lo que falta por traducir
         terminos_vacios = [k for k, v in self.glossary.items() if v['token_tgt'] == ""]
@@ -40,25 +71,20 @@ class STI_Core:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-pro')
 
-        # Prompt estricto basado en tus Protocolos
         prompt = f"""
-        Actúa como un Traductor Isomórfico Estricto (Protocolo 4).
-        Tu tarea es traducir la siguiente lista de palabras del Latín al Español.
+        Actúa como un Traductor Isomórfico Estricto.
+        Traduce estas palabras del Latín al Español.
+        REGLAS:
+        1. Literalidad etimológica.
+        2. Un solo término (1:1).
+        3. Formato: token=traducción
         
-        REGLAS INVIOLABLES:
-        1. Literalidad extrema y etimológica.
-        2. Un solo término en español por cada término en latín (1:1).
-        3. Mantén la categoría gramatical (Sustantivo->Sustantivo, Verbo->Verbo).
-        4. NO uses sinónimos ni parafrasees.
-        5. Formato de salida estricto: token_origen=traducción
-        
-        LISTA A TRADUCIR:
+        LISTA:
         {", ".join(terminos_vacios)}
         """
 
         try:
             response = model.generate_content(prompt)
-            # Procesar respuesta de la IA
             texto_respuesta = response.text
             contador = 0
             
@@ -68,36 +94,43 @@ class STI_Core:
                     token = parts[0].strip()
                     trad = parts[1].strip()
                     
-                    # Solo actualizamos si el token existe y está vacío
                     if token in self.glossary and self.glossary[token]['token_tgt'] == "":
                         self.glossary[token]['token_tgt'] = trad
-                        self.glossary[token]['status'] = "SUGERIDO_IA" # Nuevo estado temporal
+                        self.glossary[token]['status'] = "SUGERIDO_IA"
                         contador += 1
             
-            return f"IA completó {contador} términos. Por favor, revísalos."
+            return f"IA completó {contador} términos."
             
         except Exception as e:
-            return f"Error al conectar con la IA: {str(e)}"
-
+            return f"Error IA: {str(e)}"
 
     def p3_traduccion(self):
         """Protocolo 3: Core (Control de Flujo)."""
-        # Protocolo 2.3: Prohibido avanzar sin registro completo
-        faltantes = [k for k, v in self.glossary.items() if v['status'] == 'PENDIENTE' and v['categoria'] == 'NUCLEO']
+        # Protocolo 2.3: Verificación de Integridad
+        faltantes = [k for k, v in self.glossary.items() if v['status'] == 'PENDIENTE' and v['categoria'] == 'NUCLEO' and v['token_tgt'] == ""]
+        
         if faltantes:
-            raise ProtocoloError(f"REGISTRO INCOMPLETO: {faltantes}")
+            # FALLO CRÍTICO si hay núcleos vacíos
+            raise ProtocoloError(f"REGISTRO INCOMPLETO: {faltantes[:5]}... (Total: {len(faltantes)})")
 
         tokens = self.source_text.split(' ')
         self.mtx_t = []
 
         for token in tokens:
+            if not token: continue
+            
             entry = self.glossary.get(token)
+            if not entry:
+                # Caso raro: token no estaba en glosario (ej. modificado post-analisis)
+                self.mtx_t.append(f"{{{token}}}")
+                continue
+
             if entry['categoria'] == 'NUCLEO':
-                # Protocolo 1.A.7: Paridad léxica 1:1
-                self.mtx_t.append(entry['token_tgt'])
-            else:
-                # Protocolo 5: Correspondencia funcional para partículas
                 val = entry['token_tgt'] if entry['token_tgt'] else f"{{{token}}}"
+                self.mtx_t.append(val)
+            else:
+                # Partículas: Si está vacía, se deja el original entre llaves o se aplica lógica P5
+                val = entry['token_tgt'] if entry['token_tgt'] else f"[{token}]"
                 self.mtx_t.append(val)
 
         self.status = "TRADUCIDO"
