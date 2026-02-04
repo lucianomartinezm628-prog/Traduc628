@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from io import StringIO
 from sti_lib import STI_Core, ProtocoloError
 
 # --- CONFIGURACIÓN INICIAL ---
