@@ -3,181 +3,88 @@ import pandas as pd
 from io import StringIO
 from sti_lib import STI_Core, ProtocoloError
 
-# --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="STI v2.0", layout="wide")
-
 st.title("Sistema de Traducción Isomórfica v2.0")
-st.markdown("Protocolo Determinista: *El usuario es la máxima autoridad*")
 
-# Inicializar el Core (Memoria persistente)
+# Inicializar Memoria
 if 'sti' not in st.session_state:
     st.session_state.sti = STI_Core()
 
-# --- SIDEBAR: PANEL DE CONTROL Y COMANDOS (P11) ---
-st.sidebar.header("Panel de Control (P11)")
+# --- SIDEBAR ---
+st.sidebar.header("Control P11")
+st.sidebar.info(f"Estado: {st.session_state.sti.status}")
 
-# 1. Estado del sistema
-st.sidebar.info(f"Fase Actual: {st.session_state.sti.status}")
-
-# 2. Terminal de Comandos (¡NUEVO!)
-st.sidebar.markdown("### Terminal de Comandos")
-cmd_input = st.sidebar.text_input("Escribir comando:", placeholder="Ej: [AÑADE nomen=nombre]")
-
-if st.sidebar.button("Ejecutar Comando"):
-    # Lógica básica para procesar comandos manuales
-    try:
-        cmd = cmd_input.strip()
-        
-        # Comando [AÑADE x=y]
-        if cmd.startswith("[AÑADE") and "=" in cmd:
-            parts = cmd.replace("[AÑADE", "").replace("]", "").split("=")
-            token = parts[0].strip()
-            traduccion = parts[1].strip()
-            
-            # Registrar en el núcleo
-            st.session_state.sti.glossary[token] = {
-                "token_src": token,
-                "token_tgt": traduccion,
-                "categoria": "NUCLEO", # Asumimos núcleo por defecto al añadir manual
-                "status": "ASIGNADO",
-                "ocurrencias": []
+# Terminal de Comandos
+cmd = st.sidebar.text_input("Comando:", placeholder="[AÑADE token=trad]")
+if st.sidebar.button("Ejecutar"):
+    if "=" in cmd and "[AÑADE" in cmd:
+        try:
+            clean = cmd.replace("[AÑADE", "").replace("]", "")
+            t, trad = clean.split("=")
+            st.session_state.sti.glossary[t.strip()] = {
+                "token_src": t.strip(), "token_tgt": trad.strip(),
+                "categoria": "NUCLEO", "status": "ASIGNADO", "ocurrencias": []
             }
-            st.sidebar.success(f"Comando ejecutado: Asignado '{token}' -> '{traduccion}'")
-            
-        # Comando [ELIMINA x]
-        elif cmd.startswith("[ELIMINA"):
-            token = cmd.replace("[ELIMINA", "").replace("]", "").strip()
-            if token in st.session_state.sti.glossary:
-                del st.session_state.sti.glossary[token]
-                st.sidebar.warning(f"Comando ejecutado: Eliminado '{token}'")
-            else:
-                st.sidebar.error("Token no encontrado.")
-                
-        # Comando [REINICIAR]
-        elif cmd == "[REINICIAR]":
-            st.session_state.sti = STI_Core()
-            st.sidebar.warning("Sistema reiniciado.")
-            st.rerun() # Recarga la página
-            
-        else:
-            st.sidebar.error("Comando no reconocido o formato incorrecto.")
-            
-    except Exception as e:
-        st.sidebar.error(f"Error al ejecutar: {e}")
-# --- IMPORTACIÓN DE GLOSARIO (Protocolo 11.D) ---
-st.sidebar.markdown("---")
-st.sidebar.header("Cargar Glosario (.txt)")
-uploaded_file = st.sidebar.file_uploader("Subir archivo (formato: token=traducción)", type="txt")
+            st.sidebar.success(f"Añadido: {t.strip()}")
+        except: st.sidebar.error("Error de formato.")
+    elif "[REINICIAR]" in cmd:
+        st.session_state.sti = STI_Core()
+        st.rerun()
 
-if uploaded_file is not None:
-    try:
-        # Leer el archivo
-        stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
-        lines = stringio.readlines()
-        
-        count = 0
-        for line in lines:
-            if "=" in line:
-                parts = line.split("=")
-                token = parts[0].strip()
-                # Eliminar saltos de línea y espacios extra
-                traduccion = parts[1].strip()
-                
-                # Insertar en el sistema
-                st.session_state.sti.glossary[token] = {
-                    "token_src": token,
-                    "token_tgt": traduccion,
-                    "categoria": "NUCLEO", # Asumimos núcleo por defecto
-                    "status": "ASIGNADO",
-                    "ocurrencias": []
-                }
-                count += 1
-        st.sidebar.success(f"✅ Se importaron {count} términos del archivo.")
-        
-    except Exception as e:
-        st.sidebar.error(f"Error al leer archivo: {e}")
-
-# 3. Configuración de Salida
-modo_salida = st.sidebar.radio("Modo de Salida", ["BORRADOR", "FINAL"])
-
+# Carga de Glosario TXT
+uploaded = st.sidebar.file_uploader("Cargar Glosario (.txt)", type="txt")
+if uploaded:
+    stringio = StringIO(uploaded.getvalue().decode("utf-8"))
+    for line in stringio:
+        if "=" in line:
+            t, trad = line.split("=", 1)
+            st.session_state.sti.glossary[t.strip()] = {
+                "token_src": t.strip(), "token_tgt": trad.strip(),
+                "categoria": "NUCLEO", "status": "ASIGNADO", "ocurrencias": []
+            }
+    st.sidebar.success("Glosario importado.")
 
 # --- FASE 1: INPUT ---
-st.header("1. Input Texto Fuente")
-text_input = st.text_area("Introduce el texto fuente:", height=150)
+st.header("1. Input")
+txt = st.text_area("Texto Fuente:", height=100)
+if st.button("Iniciar (P10.A + P8.A)"):
+    st.session_state.sti.p10_a_limpieza(txt)
+    msg = st.session_state.sti.p8_a_analisis_lexico()
+    st.success(msg)
 
-if st.button("Iniciar Protocolo (Limpieza P10.A + Análisis P8.A)"):
-    st.session_state.sti.p10_a_limpieza(text_input)
-    res = st.session_state.sti.p8_a_analisis_lexico()
-    st.success(res)
-
-# --- FASE 2: GESTIÓN DE GLOSARIO (P8) ---
+# --- FASE 2: GLOSARIO ---
 if st.session_state.sti.glossary:
-    st.header("2. Gestión de Glosario (P8)")
-    # ... (dentro de la sección FASE 2: GESTIÓN DE GLOSARIO) ...
+    st.header("2. Glosario")
+    
+    # IA AUTOCOMPLETAR
+    with st.expander("🤖 IA Autocompletar"):
+        key = st.text_input("API Key Gemini:", type="password")
+        if st.button("Ejecutar IA") and key:
+            res = st.session_state.sti.p8_ia_autocompletar(key)
+            st.success(res)
+            st.rerun()
 
-if st.session_state.sti.glossary:
-    st.header("2. Gestión de Glosario (P8)")
-    
-    # --- BLOQUE NUEVO: AUTOCOMPLETADO IA ---
-    with st.expander("🤖 Asistente de Glosario (IA)"):
-        st.markdown("Usa IA para llenar los huecos vacíos siguiendo el Protocolo 4.")
-        api_key = st.text_input("Introduce tu Google Gemini API Key:", type="password")
-        
-        if st.button("Auto-completar vacíos con IA"):
-            if api_key:
-                with st.spinner("Consultando al oráculo digital..."):
-                    msg = st.session_state.sti.p8_ia_autocompletar(api_key)
-                    st.success(msg)
-                    st.rerun() # Recargar para ver los cambios en la tabla
-            else:
-                st.error("Necesitas una API Key para usar la IA.")
-    # ---------------------------------------
-
-    
-    
-    # ... (resto del código del editor de datos) ...
-
-    st.warning("⚠️ Recuerda: Los NÚCLEOS son invariables. Las PARTÍCULAS se resuelven dinámicamente.")
-    
-    # Crear DataFrame para el editor visual
+    # EDITOR
     df = pd.DataFrame.from_dict(st.session_state.sti.glossary, orient='index')
+    edited = st.data_editor(df[['categoria', 'token_tgt', 'status']], use_container_width=True)
     
-    # Editor visual (Grid)
-    edited_df = st.data_editor(
-        df[['categoria', 'token_tgt', 'status']], 
-        key="editor_glosario",
-        use_container_width=True
-    )
-    
-    # Botón visual para guardar cambios masivos (Equivale a muchos comandos ACTUALIZA)
-    if st.button("💾 Guardar Cambios del Glosario"):
-        cambios_count = 0
-        for token, row in edited_df.iterrows():
-            # Actualizar solo si hubo cambios
-            if st.session_state.sti.glossary[token]['token_tgt'] != row['token_tgt']:
-                st.session_state.sti.glossary[token]['token_tgt'] = row['token_tgt']
-                st.session_state.sti.glossary[token]['categoria'] = row['categoria']
-                if row['token_tgt'].strip() != "":
-                    st.session_state.sti.glossary[token]['status'] = "ASIGNADO"
-                cambios_count += 1
-        
-        if cambios_count > 0:
-            st.success(f"Glosario actualizado: {cambios_count} cambios registrados.")
-        else:
-            st.info("No se detectaron cambios nuevos.")
+    if st.button("Guardar Cambios Manuales"):
+        for t, row in edited.iterrows():
+            st.session_state.sti.glossary[t]['token_tgt'] = row['token_tgt']
+            st.session_state.sti.glossary[t]['categoria'] = row['categoria']
+            if row['token_tgt']: st.session_state.sti.glossary[t]['status'] = "ASIGNADO"
+        st.success("Guardado.")
 
-# --- FASE 3: TRADUCCIÓN (P3) ---
-st.header("3. Core de Traducción (P3-P7)")
-
-if st.button("EJECUTAR TRADUCCIÓN"):
+# --- FASE 3: TRADUCCION ---
+st.header("3. Traducción")
+if st.button("TRADUCIR (P3)"):
     try:
         msg = st.session_state.sti.p3_traduccion()
         st.success(msg)
     except ProtocoloError as e:
-        st.error(f"⛔ FALLO CRÍTICO: {e}")
+        st.error(f"⛔ {e}")
 
-# --- FASE 4: OUTPUT (P10.B) ---
+# --- FASE 4: SALIDA ---
 if st.session_state.sti.status == "TRADUCIDO":
-    st.header("4. Output Final")
-    texto_final = st.session_state.sti.p10_b_renderizado()
-    st.text_area("Resultado:", value=texto_final, height=150)
+    st.header("4. Resultado")
+    st.text_area("Final:", st.session_state.sti.p10_b_renderizado())
