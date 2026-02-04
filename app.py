@@ -113,6 +113,30 @@ if st.button("Iniciar Protocolo (Limpieza P10.A + Análisis P8.A)"):
 # --- FASE 2: GESTIÓN DE GLOSARIO (P8) ---
 if st.session_state.sti.glossary:
     st.header("2. Gestión de Glosario (P8)")
+    # ... (dentro de la sección FASE 2: GESTIÓN DE GLOSARIO) ...
+
+if st.session_state.sti.glossary:
+    st.header("2. Gestión de Glosario (P8)")
+    
+    # --- BLOQUE NUEVO: AUTOCOMPLETADO IA ---
+    with st.expander("🤖 Asistente de Glosario (IA)"):
+        st.markdown("Usa IA para llenar los huecos vacíos siguiendo el Protocolo 4.")
+        api_key = st.text_input("Introduce tu Google Gemini API Key:", type="password")
+        
+        if st.button("Auto-completar vacíos con IA"):
+            if api_key:
+                with st.spinner("Consultando al oráculo digital..."):
+                    msg = st.session_state.sti.p8_ia_autocompletar(api_key)
+                    st.success(msg)
+                    st.rerun() # Recargar para ver los cambios en la tabla
+            else:
+                st.error("Necesitas una API Key para usar la IA.")
+    # ---------------------------------------
+
+    
+    
+    # ... (resto del código del editor de datos) ...
+
     st.warning("⚠️ Recuerda: Los NÚCLEOS son invariables. Las PARTÍCULAS se resuelven dinámicamente.")
     
     # Crear DataFrame para el editor visual
