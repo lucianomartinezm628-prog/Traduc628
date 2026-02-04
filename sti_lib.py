@@ -18,25 +18,67 @@ class STI_Core:
         self.source_text = clean_text
         return clean_text
 
-    def p8_a_analisis_lexico(self):
-        """Protocolo 8.A: Tokenización y Registro Inicial."""
-        if not self.source_text:
-            return "No hay texto fuente."
+        # ... (código anterior) ...
+
+    def p8_ia_autocompletar(self, api_key):
+        """
+        Usa IA para sugerir traducciones a los núcleos vacíos (PENDIENTE).
+        Respeta Protocolo 4: Jerarquía Etimológica.
+        """
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            return "Error: Librería google-generativeai no instalada."
+
+        # Filtrar solo lo que falta por traducir
+        terminos_vacios = [k for k, v in self.glossary.items() if v['token_tgt'] == ""]
         
-        tokens = self.source_text.split(' ')
-        for i, token in enumerate(tokens):
-            if token not in self.glossary:
-                # Protocolo 1.A.4: Clasificación inicial
-                categoria = "PARTICULA" if len(token) < 4 else "NUCLEO"
-                self.glossary[token] = {
-                    "token_src": token,
-                    "token_tgt": "", 
-                    "categoria": categoria,
-                    "status": "PENDIENTE",
-                    "ocurrencias": [i]
-                }
-        self.status = "P8_A_COMPLETO"
-        return "Análisis léxico completado (P8.A)."
+        if not terminos_vacios:
+            return "El glosario ya está completo."
+
+        # Configurar la IA
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-pro')
+
+        # Prompt estricto basado en tus Protocolos
+        prompt = f"""
+        Actúa como un Traductor Isomórfico Estricto (Protocolo 4).
+        Tu tarea es traducir la siguiente lista de palabras del Latín al Español.
+        
+        REGLAS INVIOLABLES:
+        1. Literalidad extrema y etimológica.
+        2. Un solo término en español por cada término en latín (1:1).
+        3. Mantén la categoría gramatical (Sustantivo->Sustantivo, Verbo->Verbo).
+        4. NO uses sinónimos ni parafrasees.
+        5. Formato de salida estricto: token_origen=traducción
+        
+        LISTA A TRADUCIR:
+        {", ".join(terminos_vacios)}
+        """
+
+        try:
+            response = model.generate_content(prompt)
+            # Procesar respuesta de la IA
+            texto_respuesta = response.text
+            contador = 0
+            
+            for linea in texto_respuesta.split('\n'):
+                if "=" in linea:
+                    parts = linea.split("=")
+                    token = parts[0].strip()
+                    trad = parts[1].strip()
+                    
+                    # Solo actualizamos si el token existe y está vacío
+                    if token in self.glossary and self.glossary[token]['token_tgt'] == "":
+                        self.glossary[token]['token_tgt'] = trad
+                        self.glossary[token]['status'] = "SUGERIDO_IA" # Nuevo estado temporal
+                        contador += 1
+            
+            return f"IA completó {contador} términos. Por favor, revísalos."
+            
+        except Exception as e:
+            return f"Error al conectar con la IA: {str(e)}"
+
 
     def p3_traduccion(self):
         """Protocolo 3: Core (Control de Flujo)."""
