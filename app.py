@@ -63,6 +63,38 @@ if st.sidebar.button("Ejecutar Comando"):
             
     except Exception as e:
         st.sidebar.error(f"Error al ejecutar: {e}")
+# --- IMPORTACIÓN DE GLOSARIO (Protocolo 11.D) ---
+st.sidebar.markdown("---")
+st.sidebar.header("Cargar Glosario (.txt)")
+uploaded_file = st.sidebar.file_uploader("Subir archivo (formato: token=traducción)", type="txt")
+
+if uploaded_file is not None:
+    try:
+        # Leer el archivo
+        stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
+        lines = stringio.readlines()
+        
+        count = 0
+        for line in lines:
+            if "=" in line:
+                parts = line.split("=")
+                token = parts[0].strip()
+                # Eliminar saltos de línea y espacios extra
+                traduccion = parts[1].strip()
+                
+                # Insertar en el sistema
+                st.session_state.sti.glossary[token] = {
+                    "token_src": token,
+                    "token_tgt": traduccion,
+                    "categoria": "NUCLEO", # Asumimos núcleo por defecto
+                    "status": "ASIGNADO",
+                    "ocurrencias": []
+                }
+                count += 1
+        st.sidebar.success(f"✅ Se importaron {count} términos del archivo.")
+        
+    except Exception as e:
+        st.sidebar.error(f"Error al leer archivo: {e}")
 
 # 3. Configuración de Salida
 modo_salida = st.sidebar.radio("Modo de Salida", ["BORRADOR", "FINAL"])
