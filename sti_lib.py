@@ -1,141 +1,111 @@
 import re
 
 class ProtocoloError(Exception):
-    """Protocolo 0.5: Error que detiene el proceso hasta intervención."""
+    """Error crítico que detiene el flujo."""
     pass
 
 class STI_Core:
     def __init__(self):
-        self.glossary = {}  # Protocolo 8
+        self.glossary = {} 
         self.source_text = ""
-        self.mtx_t = []     # Protocolo 3: Mtx_T
+        self.mtx_t = []     
         self.status = "ESPERA"
 
     def p10_a_limpieza(self, text):
-        """Protocolo 10.A: Filtro de ruido y normalización."""
-        if not text:
-            return ""
-        # Eliminar números entre corchetes tipo [1] o [Page 2]
-        clean_text = re.sub(r'\[.*?\]', '', text)
-        # Eliminar puntuación latina básica para tokenización limpia
-        clean_text = re.sub(r'[;,\.]', '', clean_text)
+        """Limpieza P10.A"""
+        if not text: return ""
+        # Limpiar referencias tipo [1] o [Page 2]
+        clean = re.sub(r'\[.*?\]', '', text)
+        # Limpiar puntuación básica
+        clean = re.sub(r'[;,\.]', '', clean)
         # Normalizar espacios
-        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-        self.source_text = clean_text
-        return clean_text
+        clean = re.sub(r'\s+', ' ', clean).strip()
+        self.source_text = clean
+        return clean
 
     def p8_a_analisis_lexico(self):
-        """Protocolo 8.A: Tokenización y Registro Inicial."""
+        """Análisis P8.A"""
         if not self.source_text:
-            return "No hay texto fuente cargado."
+            return "No hay texto fuente."
         
         tokens = self.source_text.split(' ')
         nuevos = 0
         for i, token in enumerate(tokens):
-            if not token: continue # Saltar vacíos
+            if not token: continue
             
             if token not in self.glossary:
-                # Protocolo 1.A.4: Clasificación inicial básica
-                # Si tiene más de 3 letras asumimos NUCLEO por defecto, si no PARTICULA
-                categoria = "PARTICULA" if len(token) < 4 else "NUCLEO"
+                cat = "PARTICULA" if len(token) < 4 else "NUCLEO"
                 self.glossary[token] = {
                     "token_src": token,
                     "token_tgt": "", 
-                    "categoria": categoria,
+                    "categoria": cat,
                     "status": "PENDIENTE",
                     "ocurrencias": [i]
                 }
                 nuevos += 1
             else:
                 self.glossary[token]["ocurrencias"].append(i)
-                
+        
         self.status = "P8_A_COMPLETO"
-        return f"Análisis P8.A completado. {nuevos} términos nuevos registrados."
+        return f"Análisis completado. {nuevos} términos nuevos."
 
     def p8_ia_autocompletar(self, api_key):
-        """
-        Usa IA para sugerir traducciones a los núcleos vacíos (PENDIENTE).
-        """
+        """Autocompletado IA"""
         try:
             import google.generativeai as genai
         except ImportError:
-            return "Error: Librería google-generativeai no instalada en requirements.txt"
+            return "Error: Falta google-generativeai en requirements.txt"
 
-        # Filtrar solo lo que falta por traducir
-        terminos_vacios = [k for k, v in self.glossary.items() if v['token_tgt'] == ""]
-        
-        if not terminos_vacios:
-            return "El glosario ya está completo."
+        pendientes = [k for k,v in self.glossary.items() if v['token_tgt'] == ""]
+        if not pendientes: return "Glosario ya está completo."
 
-        # Configurar la IA
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-pro')
-
-        prompt = f"""
-        Actúa como un Traductor Isomórfico Estricto.
-        Traduce estas palabras del Latín al Español.
-        REGLAS:
-        1. Literalidad etimológica.
-        2. Un solo término (1:1).
-        3. Formato: token=traducción
         
-        LISTA:
-        {", ".join(terminos_vacios)}
-        """
-
+        prompt = f"Traduce del Latín al Español. Literalidad estricta 1:1. Formato: token=traduccion. Lista: {', '.join(pendientes)}"
+        
         try:
-            response = model.generate_content(prompt)
-            texto_respuesta = response.text
-            contador = 0
-            
-            for linea in texto_respuesta.split('\n'):
-                if "=" in linea:
-                    parts = linea.split("=")
-                    token = parts[0].strip()
-                    trad = parts[1].strip()
-                    
-                    if token in self.glossary and self.glossary[token]['token_tgt'] == "":
-                        self.glossary[token]['token_tgt'] = trad
-                        self.glossary[token]['status'] = "SUGERIDO_IA"
-                        contador += 1
-            
-            return f"IA completó {contador} términos."
-            
+            res = model.generate_content(prompt)
+            count = 0
+            for line in res.text.split('\n'):
+                if "=" in line:
+                    t, trad = line.split("=", 1)
+                    t = t.strip()
+                    if t in self.glossary:
+                        self.glossary[t]['token_tgt'] = trad.strip()
+                        self.glossary[t]['status'] = "SUGERIDO_IA"
+                        count += 1
+            return f"IA completó {count} términos."
         except Exception as e:
             return f"Error IA: {str(e)}"
 
     def p3_traduccion(self):
-        """Protocolo 3: Core (Control de Flujo)."""
-        # Protocolo 2.3: Verificación de Integridad
-        faltantes = [k for k, v in self.glossary.items() if v['status'] == 'PENDIENTE' and v['categoria'] == 'NUCLEO' and v['token_tgt'] == ""]
-        
-        if faltantes:
-            # FALLO CRÍTICO si hay núcleos vacíos
-            raise ProtocoloError(f"REGISTRO INCOMPLETO: {faltantes[:5]}... (Total: {len(faltantes)})")
+        """Core de Traducción P3"""
+        # Verificación de integridad
+        vacios = [k for k,v in self.glossary.items() if v['categoria'] == 'NUCLEO' and v['token_tgt'] == ""]
+        if vacios:
+            raise ProtocoloError(f"REGISTRO INCOMPLETO: Faltan {len(vacios)} núcleos (ej: {vacios[:3]}).")
 
-        tokens = self.source_text.split(' ')
         self.mtx_t = []
-
+        tokens = self.source_text.split(' ')
+        
         for token in tokens:
             if not token: continue
-            
             entry = self.glossary.get(token)
+            
             if not entry:
-                # Caso raro: token no estaba en glosario (ej. modificado post-analisis)
-                self.mtx_t.append(f"{{{token}}}")
+                self.mtx_t.append(f"{{{token}}}") # Token desconocido
                 continue
 
             if entry['categoria'] == 'NUCLEO':
-                val = entry['token_tgt'] if entry['token_tgt'] else f"{{{token}}}"
-                self.mtx_t.append(val)
+                self.mtx_t.append(entry['token_tgt'])
             else:
-                # Partículas: Si está vacía, se deja el original entre llaves o se aplica lógica P5
+                # Partícula: Si vacía -> original entre corchetes
                 val = entry['token_tgt'] if entry['token_tgt'] else f"[{token}]"
                 self.mtx_t.append(val)
-
+        
         self.status = "TRADUCIDO"
-        return "CORE-OK: Traducción terminada."
+        return "Traducción finalizada."
 
     def p10_b_renderizado(self):
-        """Protocolo 10.B: Post-procesamiento."""
         return " ".join(self.mtx_t)
